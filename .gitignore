@@ -171,3 +171,8 @@ TAGS
 *.rej
 
 # virtual environments
+venv/
+
+
+# DATA
+data/
