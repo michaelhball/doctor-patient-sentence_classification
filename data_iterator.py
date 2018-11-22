@@ -17,7 +17,8 @@ class DataIterator():
         return self.num_examples
 
     def __iter__(self):
-        self.reset()
+        if self.randomise:
+            shuffle(self.data)
         while self.i < self.num_examples - 1:
             example = self.data[self.i]
             self.i += 1
@@ -25,8 +26,8 @@ class DataIterator():
     
     def _embed_data(self):
         assert(self.we)
-        for example in self.data:
-            example[3] = self._embed_sentence(example[3])
+        for i, example in enumerate(self.data):
+            self.data[i][3] = self._embed_sentence(example[3])
     
     def _embed_sentence(self, sentence):
         output = []
@@ -37,19 +38,24 @@ class DataIterator():
         
         return np.array(output)
 
+    def _labels_to_idx(self):
+        self.simple_labels = []
+        self.extended_labels = []
+        for i, example in enumerate(self.data):
+            if example[4] not in self.simple_labels:
+                self.simple_labels.append(example[4])
+            self.data[i][4] = self.simple_labels.index(example[4])
+            if example[5] not in self.extended_labels:
+                self.extended_labels.append(example[5])
+            self.data[i][5] = self.extended_labels.index(example[5])
+
     def reset(self):
         self.data = tokenise(self.data_reader.read())
         self.num_examples = len(self.data)
+        self._labels_to_idx()
         # self.vocab, self.string2idx = create_vocab([['doctor', 'patient']]+[r[3] for r in self.data]) # may not need this if using pretrained embeddings
         if self.we:
-            self.data = self.embed_data()
+            self._embed_data()
         if self.randomise:
             shuffle(self.data)
         self.i = 0
-
-
-# if __name__ == "__main__":
-#     from data_reader import DataReader
-#     dr = DataReader('./data/task_b_interactions_train.tsv')
-#     di = DataIterator(dr)
-
