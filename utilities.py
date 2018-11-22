@@ -1,7 +1,12 @@
+"""
+Taken from fastai library: https://github.com/fastai/fastai 
+"""
+
 import numpy as np
 import torch
 
 from torch.autograd import Variable
+
 
 def T(a, half=False, cuda=False):
     """
@@ -19,6 +24,9 @@ def T(a, half=False, cuda=False):
     return a
 
 def map_over(x, f):
+    """
+    Applies a given function over elements of input.
+    """
     return [f(o) for o in x] if isinstance(x, (list, tuple)) else f(x)
 
 def create_variable(x, volatile, requires_grad=False):
@@ -34,4 +42,3 @@ def V(x, requires_grad=False, volatile=False):
     Creates a single Tensor or list of Tensors depending on input x.
     """
     return map_over(x, lambda o: create_variable(o, requires_grad, volatile))
-
