@@ -20,4 +20,4 @@ class BasicClassifier(nn.Module):
             l_x = l(x)
             x = F.relu(l_x)
         
-        return F.softmax(l_x, dim=0)
+        return F.log_softmax(l_x, dim=1)
