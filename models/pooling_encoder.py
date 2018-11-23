@@ -21,6 +21,7 @@ class PoolingEncoder(nn.Module):
             if self.pooling_type == "max":
                 output, _ = torch.max(input, 0)
             elif self.pooling_type == "ave":
-                output, _ = torch.mean(input, 0)
+                output = torch.mean(input, 0)
         
         return output.reshape(1, -1)
+            
