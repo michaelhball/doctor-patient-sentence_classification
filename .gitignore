@@ -176,3 +176,4 @@ venv/
 
 # DATA
 data/
+saved_models/
