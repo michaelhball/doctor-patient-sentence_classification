@@ -1,9 +1,40 @@
 import gensim.downloader as api
 import numpy as np
+import pickle
 
+from pathlib import Path
 from random import shuffle
 
 from preprocessing import create_vocab, tokenise
+
+
+class PickleDataIterator():
+    def __init__(self, data_file, randomise):
+        self.data_file = data_file
+        self.randomise = randomise
+        self.simple_labels = pickle.load(Path('./data/simple_labels.pkl').open('rb'))
+        self.extended_labels = pickle.load(Path('./data/extended_labels.pkl').open('rb'))
+        self.fetch_data()
+    
+    def __len__(self):
+        return self.num_examples
+    
+    def __iter__(self):
+        self.reset()
+        while self.i < self.num_examples - 1:
+            example = self.data[self.i]
+            self.i += 1
+            yield example
+
+    def fetch_data(self):
+        self.data = pickle.load(Path(self.data_file).open('rb'))
+        self.num_examples = len(self.data)
+        self.reset()
+
+    def reset(self):
+        self.i = 0
+        if self.randomise:
+            shuffle(self.data)
 
 
 class DataIterator():
@@ -11,14 +42,13 @@ class DataIterator():
         self.data_reader = data_reader
         self.we = api.load(word_embedding_source) if word_embedding_source else None
         self.randomise = randomise
-        self.reset()
+        self.fetch_data()
 
     def __len__(self):
         return self.num_examples
 
     def __iter__(self):
-        if self.randomise:
-            shuffle(self.data)
+        self.reset()
         while self.i < self.num_examples - 1:
             example = self.data[self.i]
             self.i += 1
@@ -48,14 +78,17 @@ class DataIterator():
             if example[5] not in self.extended_labels:
                 self.extended_labels.append(example[5])
             self.data[i][5] = self.extended_labels.index(example[5])
-
-    def reset(self):
+    
+    def fetch_data(self):
         self.data = tokenise(self.data_reader.read())
         self.num_examples = len(self.data)
         self._labels_to_idx()
-        # self.vocab, self.string2idx = create_vocab([['doctor', 'patient']]+[r[3] for r in self.data]) # may not need this if using pretrained embeddings
+        self.vocab, self.string2idx = create_vocab([['doctor', 'patient']]+[x[3] for x in self.data])
         if self.we:
             self._embed_data()
+        self.reset()
+
+    def reset(self):
+        self.i = 0
         if self.randomise:
             shuffle(self.data)
-        self.i = 0
