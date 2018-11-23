@@ -41,6 +41,7 @@ def tokenise_sentence(tokeniser, sent):
 def create_vocab(sentences):
     freq = Counter(p for o in sentences for p in o)
     vocab = [o for o, c in freq.most_common(5000)]
+    vocab.insert(0, '_pad_')
     vocab.insert(0, '_unk_')
     string2idx = defaultdict(lambda:0, {v: k for k, v in enumerate(vocab)})
 
