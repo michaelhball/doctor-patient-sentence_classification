@@ -332,7 +332,7 @@ if __name__ == "__main__":
             args.classification_type, args.encoder_type, args.classifier_type, params)
     if args.task == "train":
         opt = opt_func(classifier.model.parameters(), lr)
-        print(train_model(classifier, args.num_training_epochs, loss_func, opt, visualise=False, save=True))
+        print(train_model(classifier, args.num_training_epochs, loss_func, opt, visualise=True, save=False))
     elif args.task == "model_accuracy":
         print(model_accuracy(5, classifier, args.num_training_epochs, loss_func, opt_func, lr))
     elif args.task == "output_csv":
