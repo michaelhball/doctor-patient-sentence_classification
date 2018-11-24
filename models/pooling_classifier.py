@@ -5,9 +5,6 @@ import torch.nn.functional as F
 from .linear_block import LinearBlock
 
 
-from torch.autograd import Variable
-
-
 class PoolingClassifier(nn.Module):
     def __init__(self, layers, drops):
         super().__init__()
