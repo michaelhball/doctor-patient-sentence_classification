@@ -1,4 +1,5 @@
 from .basic_classifier import BasicClassifier
+from .encoder import Encoder
 from .linear_block import LinearBlock
 from .pooling_classifier import PoolingClassifier
 from .pooling_encoder import PoolingEncoder
@@ -9,17 +10,16 @@ import torch.nn as nn
 encoders = {
     "max_pool_embeddings": PoolingEncoder("max"),
     "ave_pool_embeddings": PoolingEncoder("ave"),
+    "basic": Encoder(),
 }
 
 classifiers = {
     "basic": BasicClassifier,
+    "pooling": PoolingClassifier,
 }
 
 
 def create_classifier(layers, drops, encoder_type="max_pool_embeddings", classifier_model="basic"):
-    if classifier_model == "pooling":
-        return PoolingClassifier(layers, drops)
-        
     encoder = encoders[encoder_type]
     classifier = classifiers[classifier_model](layers, drops)
 
