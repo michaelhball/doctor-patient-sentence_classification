@@ -37,9 +37,8 @@ class DataWriter():
             extended_class = extended_output.argmax(0)
             extended_class_str = self.di.extended_labels[extended_class]
             extended_confidence = round(self.softmax(extended_output)[extended_class], 3)
-            confidences = "simple: {0}, extended: {1}".format(simple_confidence, extended_confidence)
-            row = x1[:6] + [simple_class_str, extended_class_str, confidences]
-            self.output_data.append('\t'.join(row))
+            confidences = "simple: {0} extended: {1}".format(simple_confidence, extended_confidence)
+            self.output_data.append(x1[:6] + [simple_class_str, extended_class_str, confidences])
 
     def softmax(self, x):
         e_x = np.exp(x - np.max(x))
@@ -49,5 +48,6 @@ class DataWriter():
         if not self.output_data:
             self.create_output_data()
         with Path(self.output_file).open('w') as f:
-            writer = csv.writer(f)
-            writer.writerows(self.output_data)
+            writer = csv.writer(f, delimiter='\t')
+            for row in self.output_data:
+                writer.writerow(row)
