@@ -170,11 +170,17 @@ def get_trial_best_models(trial_name):
         print('you have already collected the best models for this trial')
 
 
-def train_model(train_di, test_di, layers, drops, loss_func, opt_func, params=None):
-    classifier = ModelWrapper(args.model_name, train_di, test_di, layers, drops, args.classification_type, args.encoder_type, args.classifier_type, params)
-    # opt_func = opt_func(classifier.model.parameters(), lr=0.001, weight_decay=0.05)
-    opt_func = opt_func(classifier.model.parameters())
-    train_accs, test_accs, train_losses, test_losses = classifier.train(args.num_training_epochs, loss_func, opt_func)
+# def train_model(train_di, test_di, layers, drops, loss_func, opt_func, params=None):
+#     classifier = ModelWrapper(args.model_name, train_di, test_di, layers, drops, args.classification_type, args.encoder_type, args.classifier_type, params)
+#     # opt_func = opt_func(classifier.model.parameters(), lr=0.01, weight_decay=0.05)
+#     # opt_func = opt_func(classifier.model.parameters())
+#     train_accs, test_accs, train_losses, test_losses = classifier.train(args.num_training_epochs, loss_func, opt_func)
+#     plot_train_test_loss(train_losses, test_losses)
+#     plot_train_test_accs(train_accs, test_accs)
+
+
+def train_model(classifier, num_epochs, loss_func, opt_func):
+    train_accs, test_accs, train_losses, test_losses = classifier.train(num_epochs, loss_func, opt_func)
     plot_train_test_loss(train_losses, test_losses)
     plot_train_test_accs(train_accs, test_accs)
 
@@ -195,20 +201,21 @@ if __name__ == "__main__":
     else:
         c = len(train_di.extended_labels)
     
-    # loss and optimisation functions
     loss_func = nn.CrossEntropyLoss() # NB: this includes a softmax calculation => output logits from my classifiers.
-    # opt_func = torch.optim.SGD
-    opt_func = torch.optim.Adam
 
     # For pooling classifier
     layers = [900, 300, 50, c]
     drops = [0, 0, 0]
+    classifier = ModelWrapper(args.model_name, train_di, test_di, layers, drops, args.classification_type, args.encoder_type, args.classifier_type)
+    opt_func = torch.optim.SGD(classifier.model.parameters(), lr=0.01, weight_decay=0.05)
+    train_model(classifier, args.num_training_epochs , loss_func, opt_func)
+    # run_trials('pool_classifier_sgd', 10, train_di, test_di, layers, drops, loss_func, opt_func)
+    # get_trial_best_models('pool_classifier_sgd')
 
     # For lstm classifier
     # layers = [150, 50, c]
     # drops = [0, 0]
     # params = {'embedding_dim': 50, 'hidden_dim': 50}
-
-    # run_trials('pool_classifier_sgd', 10, train_di, test_di, layers, drops, loss_func, opt_func)
-    # get_trial_best_models('pool_classifier_sgd')
-    train_model(train_di, test_di, layers, drops, loss_func, opt_func, params)
+    # classifier = ModelWrapper(args.model_name, train_di, test_di, layers, drops, args.classification_type, args.encoder_type, args.classifier_type, params)
+    # opt_func = torch.optim.Adam(classifier.model.params())
+    # train_model(classifier, args.num_training_epochs, loss_func, opt_func)
