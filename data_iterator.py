@@ -38,10 +38,11 @@ class PickleDataIterator():
 
 
 class DataIterator():
-    def __init__(self, data_reader, word_embedding_source=None, randomise=True):
+    def __init__(self, data_reader, word_embedding_source=None, randomise=True, bow=False):
         self.data_reader = data_reader
         self.we = api.load(word_embedding_source) if word_embedding_source else None
         self.randomise = randomise
+        self.bow = bow
         self.fetch_data()
 
     def __len__(self):
@@ -80,12 +81,20 @@ class DataIterator():
                 self.extended_labels.append(example[5])
             self.data[i][5] = self.extended_labels.index(example[5])
     
+    def _bow_data(self):
+        assert(self.bow)
+        for i, x in enumerate(self.data):
+            self.data[i][2] = self.string2idx[x[2]]
+            self.data[i][3] = np.array([self.string2idx[w] for w in x[3]])
+
     def fetch_data(self):
         self.data = tokenise(self.data_reader.read())
         self.num_examples = len(self.data)
         self._labels_to_idx()
         self.vocab, self.string2idx = create_vocab([['doctor', 'patient']]+[x[3] for x in self.data])
-        if self.we:
+        if self.bow:
+            self._bow_data()
+        elif self.we:
             self._embed_data()
         self.reset()
 
