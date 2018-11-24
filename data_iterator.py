@@ -57,8 +57,9 @@ class DataIterator():
     def _embed_data(self):
         assert(self.we)
         for i, example in enumerate(self.data):
+            self.data[i][2] = self.we[example[2]]
             self.data[i][3] = self._embed_sentence(example[3])
-    
+
     def _embed_sentence(self, sentence):
         output = []
         for token in sentence:
