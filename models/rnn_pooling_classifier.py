@@ -4,6 +4,7 @@ import torch.nn.functional as F
 
 from .linear_block import LinearBlock
 
+
 class RNNPoolingClassifier(nn.Module):
     """
     Class for a pooling linear classifier that concatenates the final output of the RNN,
