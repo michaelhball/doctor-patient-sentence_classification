@@ -3,6 +3,7 @@ import torch.nn.functional as F
 
 from .linear_block import LinearBlock
 
+
 class BasicClassifier(nn.Module):
     def __init__(self, layers, drops=None):
         """
@@ -19,5 +20,5 @@ class BasicClassifier(nn.Module):
         for l in self.layers:
             l_x = l(x)
             x = F.relu(l_x)
-        
-        return F.log_softmax(l_x, dim=1)
+
+        return l_x
