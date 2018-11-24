@@ -1,4 +1,5 @@
 import argparse
+import numpy as np
 import os
 import pickle
 import time
@@ -52,6 +53,9 @@ class ModelWrapper():
     def save_checkpoint(self, save_checkpoint_dir, epoch):
         path = save_checkpoint_dir + '{0}.pt'.format(epoch)
         torch.save(self.model.state_dict(), path)
+
+    def load_checkpoint(self, model_file):
+        self.model.load_state_dict(torch.load(model_file))
     
     def create_model(self, encoder_type, classifier_type, layers, drops, params=None):
         self.model = create_classifier(layers, drops, encoder_type, classifier_type, params)
@@ -81,7 +85,7 @@ class ModelWrapper():
         self.model.training = False
         output = self.model(V((x[2],x[3])))
 
-        return output.max(0)[1]
+        return output
     
     def train(self, num_epochs, loss_func, opt_func, save_checkpoints_dir=None):
         print("---------------  Training Classifier ---------------")
@@ -121,7 +125,7 @@ class ModelWrapper():
         return train_accs, test_accs, train_losses, test_losses
 
 
-def run_trials(trial_name, n, train_di, test_di, layers, drops, loss_func, opt_func):
+def run_trials(trial_name, n, train_di, test_di, layers, drops, loss_func, opt_func): # UPDATE THIS TO JUST TAKE THE CLASSIFIER IN.
     """
     Runs n trials for a given model and stores state_dict checkpoints and statistics
         for each training runs.
@@ -129,6 +133,11 @@ def run_trials(trial_name, n, train_di, test_di, layers, drops, loss_func, opt_f
     trial_dir = args.saved_models + '/{0}/'.format(trial_name)
     if not os.path.exists(trial_dir):
         os.makedirs(trial_dir)
+        metadata = "Parameters: \n classification_type={0} classifier_type={1}\n encoder_type={2}\n opt_func={3}\n  layers={4}\n drops={5}".format(
+            classifier.classification_type, classifier.classifier_type, classifier.encoder_type, opt_func, classifier.layers, classifier.drops
+        )
+        with Path(trial_dir+'metadata.txt').open('wb') as f:
+            f.write(metadata)
         for t in range(n):
             run_dir = trial_dir + 'run_{0}/'.format(t+1)
             os.makedirs(run_dir)
@@ -170,13 +179,29 @@ def get_trial_best_models(trial_name):
         print('you have already collected the best models for this trial')
 
 
-# def train_model(train_di, test_di, layers, drops, loss_func, opt_func, params=None):
-#     classifier = ModelWrapper(args.model_name, train_di, test_di, layers, drops, args.classification_type, args.encoder_type, args.classifier_type, params)
-#     # opt_func = opt_func(classifier.model.parameters(), lr=0.01, weight_decay=0.05)
-#     # opt_func = opt_func(classifier.model.parameters())
-#     train_accs, test_accs, train_losses, test_losses = classifier.train(args.num_training_epochs, loss_func, opt_func)
-#     plot_train_test_loss(train_losses, test_losses)
-#     plot_train_test_accs(train_accs, test_accs)
+def test_trial_ensemble(trial_name, classifier):
+    """
+    Tests accuracy of ensembled predictions from the saved best models of
+        a given trial.
+    """
+    models_dir = args.saved_models + '/{0}/best_models/'.format(trial_name)
+    best_models = [m[2] for m in os.walk(models_dir)][0]
+    classifiers = []
+    for m in best_models:
+        new_classifier = classifier
+        new_classifier.load_checkpoint(models_dir+m)
+        classifiers.append(new_classifier)
+    
+    total_correct = 0
+    for i, x in enumerate(classifier.test_di):
+        label = x[4] if classifier.classification_type == "simple" else x[5]
+        predictions = [c.classify(x).detach().numpy()[0] for c in classifiers]
+        avg_prediction = np.mean(predictions, 0)
+        class_prediction = avg_prediction.argmax(0)
+        if class_prediction == label:
+            total_correct += 1
+    
+    return total_correct / len(classifier.test_di)
 
 
 def train_model(classifier, num_epochs, loss_func, opt_func):
@@ -207,10 +232,11 @@ if __name__ == "__main__":
     layers = [900, 300, 50, c]
     drops = [0, 0, 0]
     classifier = ModelWrapper(args.model_name, train_di, test_di, layers, drops, args.classification_type, args.encoder_type, args.classifier_type)
-    opt_func = torch.optim.SGD(classifier.model.parameters(), lr=0.01, weight_decay=0.05)
-    train_model(classifier, args.num_training_epochs , loss_func, opt_func)
+    # opt_func = torch.optim.SGD(classifier.model.parameters(), lr=0.01, weight_decay=0.05)
+    # train_model(classifier, args.num_training_epochs , loss_func, opt_func)
     # run_trials('pool_classifier_sgd', 10, train_di, test_di, layers, drops, loss_func, opt_func)
     # get_trial_best_models('pool_classifier_sgd')
+    print(test_trial_ensemble('pool_classifier_sgd', classifier))
 
     # For lstm classifier
     # layers = [150, 50, c]
