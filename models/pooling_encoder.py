@@ -19,9 +19,9 @@ class PoolingEncoder(nn.Module):
     def forward(self, input):
         with torch.set_grad_enabled(self.training):
             if self.pooling_type == "max":
-                output, _ = torch.max(input, 0)
+                output, _ = torch.max(input[1], 0)
             elif self.pooling_type == "ave":
-                output = torch.mean(input, 0)
+                output = torch.mean(input[1], 0)
         
         return output.reshape(1, -1)
             
