@@ -11,6 +11,7 @@ from tqdm import tqdm
 
 from data_iterator import DataIterator, PickleDataIterator
 from data_reader import DataReader
+from data_writer import DataWriter
 from models import create_classifier
 from utilities import V
 from visualise import plot_train_test_accs, plot_train_test_loss
@@ -20,6 +21,7 @@ parser = argparse.ArgumentParser(description='Doctor-Patient Interaction Classif
 parser.add_argument('--saved_models', type=str, default='./saved_models', help='directory to save/load models')
 parser.add_argument('--train_data', type=str, default='./data/task_b_interactions_train.tsv', help='train data tsv file')
 parser.add_argument('--test_data', type=str, default='./data/task_b_interactions_test.tsv', help='test data tsv file')
+parser.add_argument('--output_csv', type=str, default='./data/classifications.csv', help='file path to output csv file')
 parser.add_argument('--num_training_epochs', type=int, default=20, help='number of epochs to train for')
 parser.add_argument('--task', type=str, default='train', help='task out of train/test/evaluate')
 parser.add_argument('--model_name', type=str, default='classifier', help='name of model to train')
@@ -85,7 +87,7 @@ class ModelWrapper():
         self.model.training = False
         output = self.model(V((x[2],x[3])))
 
-        return output
+        return output.detach().numpy()[0]
     
     def train(self, num_epochs, loss_func, opt_func, save_checkpoints_dir=None):
         print("---------------  Training Classifier ---------------")
@@ -195,7 +197,7 @@ def test_trial_ensemble(trial_name, classifier):
     total_correct = 0
     for i, x in enumerate(classifier.test_di):
         label = x[4] if classifier.classification_type == "simple" else x[5]
-        predictions = [c.classify(x).detach().numpy()[0] for c in classifiers]
+        predictions = [c.classify(x) for c in classifiers]
         avg_prediction = np.mean(predictions, 0)
         class_prediction = avg_prediction.argmax(0)
         if class_prediction == label:
@@ -210,6 +212,25 @@ def train_model(classifier, num_epochs, loss_func, opt_func):
     plot_train_test_accs(train_accs, test_accs)
 
 
+def classify_to_csv(simple_classifier, extended_classifier, test_tsv, output_file):
+    dw = DataWriter(simple_classifier, extended_classifier, test_tsv, output_file)
+    dw.write()
+
+# TO DO
+# - Find a way to improve on extended_labels dataset
+# - clean up any code that I need to
+# - write a README (and save a best model somehow)
+# - Create a function to write labels to an output file (write the strings)
+# - Put that file in data folder, and put README in this folder.
+# - Write a report on how I made all the decisions I did and what I tried etc. (latex, include diagrams).
+    # - make a list of every little design decision and experiment I ran.
+# - test pooling classifier with SGD with glove-50 word embeddings to see if it was actually just SGD that did it.
+# - try LSTM encoder setup with SGD instead of Adam (didn't work)
+# - publish this to Github, zip everything and send back to Babylon in an email.
+# - try a Naive bayes approach??
+
+
+
 if __name__ == "__main__":
     # train_di = DataIterator(DataReader(args.train_data), word_embedding_source=args.word_embedding_source, randomise=True) # 405
     # test_di = DataIterator(DataReader(args.test_data), word_embedding_source=args.word_embedding_source, randomise=False) # 135
@@ -218,30 +239,28 @@ if __name__ == "__main__":
     # print(next(iter(train_di)))
     # assert(False)
 
-    train_di = PickleDataIterator('./data/train_data_fasttext_300.pkl', randomise=True)
-    test_di = PickleDataIterator('./data/test_data_fasttext_300.pkl', randomise=False)
+    # train_di = PickleDataIterator('./data/train_data_fasttext_300.pkl', randomise=True)
+    # test_di = PickleDataIterator('./data/test_data_fasttext_300.pkl', randomise=False)
+    train_di = PickleDataIterator('./data/train_data_glove_50.pkl', randomise=True)
+    test_di = PickleDataIterator('./data/test_data_glove_50.pkl', randomise=False)
 
-    if args.classification_type == "simple":
-        c = len(train_di.simple_labels)
-    else:
-        c = len(train_di.extended_labels)
-    
+    c = len(train_di.simple_labels) if args.classification_type == "simple" else len(train_di.extended_labels)
     loss_func = nn.CrossEntropyLoss() # NB: this includes a softmax calculation => output logits from my classifiers.
 
-    # For pooling classifier
-    layers = [900, 300, 50, c]
-    drops = [0, 0, 0]
-    classifier = ModelWrapper(args.model_name, train_di, test_di, layers, drops, args.classification_type, args.encoder_type, args.classifier_type)
+    # For pooling classifier (w fasttext word embeddings)
+    # layers = [900, 300, 50, c]
+    # drops = [0, 0, 0]
+    # classifier = ModelWrapper(args.model_name, train_di, test_di, layers, drops, args.classification_type, args.encoder_type, args.classifier_type)
     # opt_func = torch.optim.SGD(classifier.model.parameters(), lr=0.01, weight_decay=0.05)
     # train_model(classifier, args.num_training_epochs , loss_func, opt_func)
     # run_trials('pool_classifier_sgd', 10, train_di, test_di, layers, drops, loss_func, opt_func)
     # get_trial_best_models('pool_classifier_sgd')
-    print(test_trial_ensemble('pool_classifier_sgd', classifier))
+    # print(test_trial_ensemble('pool_classifier_sgd', classifier))
 
     # For lstm classifier
-    # layers = [150, 50, c]
-    # drops = [0, 0]
-    # params = {'embedding_dim': 50, 'hidden_dim': 50}
-    # classifier = ModelWrapper(args.model_name, train_di, test_di, layers, drops, args.classification_type, args.encoder_type, args.classifier_type, params)
-    # opt_func = torch.optim.Adam(classifier.model.params())
-    # train_model(classifier, args.num_training_epochs, loss_func, opt_func)
+    layers = [150, 50, c]
+    drops = [0, 0]
+    params = {'embedding_dim': 50, 'hidden_dim': 100}
+    classifier = ModelWrapper(args.model_name, train_di, test_di, layers, drops, args.classification_type, args.encoder_type, args.classifier_type, params)
+    opt_func = torch.optim.Adam(classifier.model.parameters())
+    train_model(classifier, args.num_training_epochs, loss_func, opt_func)
