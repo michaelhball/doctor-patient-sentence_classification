@@ -9,7 +9,7 @@ from preprocessing import create_vocab, tokenise
 
 
 class PickleDataIterator():
-    def __init__(self, data_file, randomise):
+    def __init__(self, data_file, randomise=False):
         self.data_file = data_file
         self.randomise = randomise
         self.simple_labels = pickle.load(Path('./data/simple_labels.pkl').open('rb'))
