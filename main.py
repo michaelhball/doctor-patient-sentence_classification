@@ -21,11 +21,12 @@ parser = argparse.ArgumentParser(description='Doctor-Patient Interaction Classif
 parser.add_argument('--saved_models', type=str, default='./saved_models', help='directory to save/load models')
 parser.add_argument('--train_data', type=str, default='./data/task_b_interactions_train.tsv', help='train data tsv file')
 parser.add_argument('--test_data', type=str, default='./data/task_b_interactions_test.tsv', help='test data tsv file')
+parser.add_argument('--vocab_file', type=str, default='./data/vocab.pkl', help='vocab file')
 parser.add_argument('--output_csv', type=str, default='./data/classifications.csv', help='file path to output csv file')
 parser.add_argument('--num_training_epochs', type=int, default=20, help='number of epochs to train for')
 parser.add_argument('--task', type=str, default='train', help='task out of train/test/evaluate')
 parser.add_argument('--model_name', type=str, default='classifier', help='name of model to train')
-parser.add_argument('--word_embedding_source', type=str, default='glove-wiki-gigaword-50', help='word embedding source to use')
+parser.add_argument('--word_embedding', type=str, default='glove_50', help='choice of pretrained embeddings')
 parser.add_argument('--classification_type', type=str, default='simple', help='choice of classification task: simple/extended')
 parser.add_argument('--encoder_type', type=str, default='max_pool_embeddings', help='choice of sentence encoder')
 parser.add_argument('--classifier_type', type=str, default='basic', help='choice of classifier model')
@@ -42,7 +43,8 @@ class ModelWrapper():
         self.encoder_type = encoder_type
         self.classifier_type = classifier_type
         self.layers, self.drops = layers, drops
-        self.create_model(self.encoder_type, self.classifier_type, self.layers, self.drops, params)
+        self.params = params
+        self.reinitialise()
     
     def save_model(self):
         path = args.saved_models + '/{0}.pt'.format(self.name)
@@ -58,9 +60,9 @@ class ModelWrapper():
 
     def load_checkpoint(self, model_file):
         self.model.load_state_dict(torch.load(model_file))
-    
-    def create_model(self, encoder_type, classifier_type, layers, drops, params=None):
-        self.model = create_classifier(layers, drops, encoder_type, classifier_type, params)
+
+    def reinitialise(self):
+        self.model = create_classifier(self.layers, self.drops, self.encoder_type, self.classifier_type, self.params)
 
     def test_loss_and_accuracy(self, loss_func, load=False):
         if load:
@@ -206,61 +208,136 @@ def test_trial_ensemble(trial_name, classifier):
     return total_correct / len(classifier.test_di)
 
 
-def train_model(classifier, num_epochs, loss_func, opt_func):
+def train_model(classifier, num_epochs, loss_func, opt_func, visualise=False, save=False):
+    """
+    Trains a model, returns final test accuracy, and optionally visualises 
+        training process
+    """
     train_accs, test_accs, train_losses, test_losses = classifier.train(num_epochs, loss_func, opt_func)
-    plot_train_test_loss(train_losses, test_losses)
-    plot_train_test_accs(train_accs, test_accs)
+    if visualise:
+        plot_train_test_loss(train_losses, test_losses)
+        plot_train_test_accs(train_accs, test_accs)
+    if save:
+        classifier.save_model()
+
+    return test_accs[-1]
 
 
-def classify_to_csv(simple_classifier, extended_classifier, test_tsv, output_file):
+def model_accuracy(n, classifier, num_epochs, loss_func, opt_func, lr):
+    """
+    Calculates a models classification accuracy on the test dataset as
+        an average over the final model for each of n trials.
+    """
+    final_accuracies = []
+    for i in range(n):
+        classifier.reinitialise()
+        opt = opt_func(classifier.model.parameters(), lr=lr)
+        acc = train_model(classifier, num_epochs, loss_func, opt)
+        final_accuracies.append(acc)
+    
+    return round(np.mean(final_accuracies), 3)
+
+
+def classify_to_csv(encoder_type, classifier_type, simple_classifier, extended_classifier, test_tsv, output_file):
+    """
+    Takes classifiers for each grain of classification and creates a csv identical
+        to the test tsv but with predicted classifications and accuracies.
+    """
+    if encoder_type == "bow" or encoder_type == "lstm":
+        simple = "/{0}_simple.pt".format(encoder_type)
+        extended = "/{0}_extended.pt".format(encoder_type)
+    elif classifier_type == "pooling":
+        if args.word_embedding.startswith("fasttext"):
+            simple = "/{0}_{1}_simple.pt".format(encoder_type, "fasttext")
+            extended = "/{0}_{1}_extended.pt".format(encoder_type, "fasttext")
+        else:
+            simple = "/{0}_{1}_simple.pt".format(encoder_type, "glove")
+            extended = "/{0}_{1}_extended.pt".format(encoder_type, "glove")
+    simple_classifier.load_checkpoint(args.saved_models + simple)
+    extended_classifier.load_checkpoint(args.saved_models + extended)
     dw = DataWriter(simple_classifier, extended_classifier, test_tsv, output_file)
     dw.write()
 
-# TO DO
-# - Find a way to improve on extended_labels dataset
-# - clean up any code that I need to
-# - write a README (and save a best model somehow)
-# - Create a function to write labels to an output file (write the strings)
-# - Put that file in data folder, and put README in this folder.
-# - Write a report on how I made all the decisions I did and what I tried etc. (latex, include diagrams).
-    # - make a list of every little design decision and experiment I ran.
-# - test pooling classifier with SGD with glove-50 word embeddings to see if it was actually just SGD that did it.
-# - try LSTM encoder setup with SGD instead of Adam (didn't work)
-# - publish this to Github, zip everything and send back to Babylon in an email.
-# - try a Naive bayes approach??
-
-
 
 if __name__ == "__main__":
-    # train_di = DataIterator(DataReader(args.train_data), word_embedding_source=args.word_embedding_source, randomise=True) # 405
-    # test_di = DataIterator(DataReader(args.test_data), word_embedding_source=args.word_embedding_source, randomise=False) # 135
-    # pickle.dump(train_di.data, Path('./data/train_data_glove_50.pkl').open('wb'))
-    # pickle.dump(test_di.data, Path('./data/test_data_glove_50.pkl').open('wb'))
-    # print(next(iter(train_di)))
-    # assert(False)
+    loss_func = nn.CrossEntropyLoss()
+    simple_labels = pickle.load(Path('./data/simple_labels.pkl').open('rb'))
+    extended_labels = pickle.load(Path('./data/extended_labels.pkl').open('rb'))
+    labels = (simple_labels, extended_labels)
+    c = len(simple_labels) if args.classification_type == "simple" else len(extended_labels)
+    vocab = pickle.load(Path(args.vocab_file).open('rb'))
 
-    # train_di = PickleDataIterator('./data/train_data_fasttext_300.pkl', randomise=True)
-    # test_di = PickleDataIterator('./data/test_data_fasttext_300.pkl', randomise=False)
-    train_di = PickleDataIterator('./data/train_data_glove_50.pkl', randomise=True)
-    test_di = PickleDataIterator('./data/test_data_glove_50.pkl', randomise=False)
+    
+    ###############################################
+    # Construct desired models and parameters
+    ###############################################
 
-    c = len(train_di.simple_labels) if args.classification_type == "simple" else len(train_di.extended_labels)
-    loss_func = nn.CrossEntropyLoss() # NB: this includes a softmax calculation => output logits from my classifiers.
 
-    # For pooling classifier (w fasttext word embeddings)
-    # layers = [900, 300, 50, c]
-    # drops = [0, 0, 0]
-    # classifier = ModelWrapper(args.model_name, train_di, test_di, layers, drops, args.classification_type, args.encoder_type, args.classifier_type)
-    # opt_func = torch.optim.SGD(classifier.model.parameters(), lr=0.01, weight_decay=0.05)
-    # train_model(classifier, args.num_training_epochs , loss_func, opt_func)
-    # run_trials('pool_classifier_sgd', 10, train_di, test_di, layers, drops, loss_func, opt_func)
-    # get_trial_best_models('pool_classifier_sgd')
-    # print(test_trial_ensemble('pool_classifier_sgd', classifier))
+    if args.encoder_type.endswith("pool_embeddings") and args.classifier_type == "basic":
+        # Basic WE-Pool Model
+        train_di = PickleDataIterator('./data/train_data_{0}.pkl'.format(args.word_embedding), randomise=True)
+        test_di = PickleDataIterator('./data/test_data_{0}.pkl'.format(args.word_embedding))
+        layers = [50, 300, c]
+        drops = [0, 0]
+        params = None
+        opt_func = torch.optim.SGD
+        lr = 0.01
+    elif args.encoder_type == "basic" and args.classifier_type == "pooling":
+        # WE-Pool Model
+        train_di = PickleDataIterator('./data/train_data_{0}.pkl'.format(args.word_embedding), labels, randomise=True)
+        test_di = PickleDataIterator('./data/test_data_{0}.pkl'.format(args.word_embedding), labels)
+        if args.classification_type == "simple":
+            layers = [900, 200, c] if args.word_embedding == "fasttext_300" else [150, 100 , c]
+            drops = [0.2, 0.2] if args.word_embedding == "fasttext_300" else [0, 0]
+        else:
+            layers = [900, 100, c] if args.word_embedding == "fasttext_300" else [150, 500, c]
+            drops = [0, 0]
+        params = None
+        opt_func = torch.optim.SGD
+        lr = 0.01
+    elif args.encoder_type == "lstm" and args.classifier_type == "rnn_pooling":
+        # LSTM Model
+        train_di = PickleDataIterator('./data/train_data_{0}.pkl'.format(args.word_embedding), labels, randomise=True)
+        test_di = PickleDataIterator('./data/test_data_{0}.pkl'.format(args.word_embedding), labels)
+        layers = [150, 300, c]
+        drops = [0, 0]
+        params = {'embedding_dim': 50, 'hidden_dim': 100}
+        opt_func = torch.optim.Adam
+        lr = 0.001
+    elif args.encoder_type == "bow" and args.classifier_type == "basic":
+        # BoW Model
+        train_di = DataIterator(DataReader(args.train_data), randomise=True, bow=True, vocab=vocab, labels=labels) # 405
+        test_di = DataIterator(DataReader(args.test_data), randomise=False, bow=True, vocab=vocab, labels=labels) # 135
+        if args.classification_type == "simple":
+            layers = [769, 300, c]
+            drops = [0.7, 0.7]
+        else:
+            layers = [769, 50, c]
+            drops = [0, 0]
+        params = {'vocab': vocab}
+        opt_func = torch.optim.SGD
+        lr = 0.01
+    
+    else:
+        print('not a valid encoder-classifier combination')
 
-    # For lstm classifier
-    layers = [150, 50, c]
-    drops = [0, 0]
-    params = {'embedding_dim': 50, 'hidden_dim': 100}
-    classifier = ModelWrapper(args.model_name, train_di, test_di, layers, drops, args.classification_type, args.encoder_type, args.classifier_type, params)
-    opt_func = torch.optim.Adam(classifier.model.parameters())
-    train_model(classifier, args.num_training_epochs, loss_func, opt_func)
+
+    ###############################################
+    # PERFORM REQUESTED TASK
+    ###############################################
+
+
+    model_name = args.model_name + "_" + args.classification_type
+    classifier = ModelWrapper(model_name, train_di, test_di, layers, drops,
+            args.classification_type, args.encoder_type, args.classifier_type, params)
+    if args.task == "train":
+        opt = opt_func(classifier.model.parameters(), lr)
+        print(train_model(classifier, args.num_training_epochs, loss_func, opt, visualise=False, save=True))
+    elif args.task == "model_accuracy":
+        print(model_accuracy(5, classifier, args.num_training_epochs, loss_func, opt_func, lr))
+    elif args.task == "output_csv":
+        simple_classifier = classifier
+        extended_classifier = ModelWrapper(args.model_name+'_extended', train_di, test_di, [769,50,12], [0,0],
+                "extended", args.encoder_type, args.classifier_type, params)
+        classify_to_csv(args.encoder_type, args.classifier_type, simple_classifier, extended_classifier, args.test_data, args.output_csv)
+        print('successfully created CSV')
