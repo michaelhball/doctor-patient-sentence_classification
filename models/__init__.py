@@ -1,4 +1,5 @@
 from .basic_classifier import BasicClassifier
+from .bow_encoder import BoWEncoder
 from .encoder import Encoder
 from .linear_block import LinearBlock
 from .lstm_encoder import LSTMEncoder
@@ -13,7 +14,8 @@ encoders = {
     "max_pool_embeddings": PoolingEncoder("max"),
     "ave_pool_embeddings": PoolingEncoder("ave"),
     "basic": Encoder(),
-    "lstm": LSTMEncoder
+    "lstm": LSTMEncoder,
+    "bow": BoWEncoder,
 }
 
 classifiers = {
@@ -27,6 +29,8 @@ def create_classifier(layers, drops, encoder_type="basic", classifier_model="poo
     encoder = encoders[encoder_type]
     if encoder_type == "lstm":
         encoder = encoder(args['embedding_dim'], args['hidden_dim'])
+    elif encoder_type == "bow":
+        encoder = encoder(args['vocab'])
     classifier = classifiers[classifier_model](layers, drops)
 
     return nn.Sequential(encoder, classifier)
