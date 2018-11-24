@@ -19,7 +19,7 @@ parser = argparse.ArgumentParser(description='Doctor-Patient Interaction Classif
 parser.add_argument('--saved_models', type=str, default='./saved_models', help='directory to save/load models')
 parser.add_argument('--train_data', type=str, default='./data/task_b_interactions_train.tsv', help='train data tsv file')
 parser.add_argument('--test_data', type=str, default='./data/task_b_interactions_test.tsv', help='test data tsv file')
-parser.add_argument('--num_training_epochs', type=int, default=100, help='number of epochs to train for')
+parser.add_argument('--num_training_epochs', type=int, default=20, help='number of epochs to train for')
 parser.add_argument('--task', type=str, default='train', help='task out of train/test/evaluate')
 parser.add_argument('--model_name', type=str, default='classifier', help='name of model to train')
 parser.add_argument('--word_embedding_source', type=str, default='glove-wiki-gigaword-50', help='word embedding source to use')
@@ -30,7 +30,7 @@ args = parser.parse_args()
 
 
 class ModelWrapper():
-    def __init__(self, name, train_di, test_di, layers, drops, classification_type, encoder_type, classifier_type):
+    def __init__(self, name, train_di, test_di, layers, drops, classification_type, encoder_type, classifier_type, params=None):
         self.name = name
         self.train_di, self.test_di = train_di, test_di
         self.simple_labels = self.train_di.simple_labels
@@ -39,7 +39,7 @@ class ModelWrapper():
         self.encoder_type = encoder_type
         self.classifier_type = classifier_type
         self.layers, self.drops = layers, drops
-        self.create_model(self.encoder_type, self.classifier_type, self.layers, self.drops)
+        self.create_model(self.encoder_type, self.classifier_type, self.layers, self.drops, params)
     
     def save_model(self):
         path = args.saved_models + '/{0}.pt'.format(self.name)
@@ -53,8 +53,8 @@ class ModelWrapper():
         path = save_checkpoint_dir + '{0}.pt'.format(epoch)
         torch.save(self.model.state_dict(), path)
     
-    def create_model(self, encoder_type, classifier_type, layers, drops):
-        self.model = create_classifier(layers, drops, encoder_type, classifier_type)
+    def create_model(self, encoder_type, classifier_type, layers, drops, params=None):
+        self.model = create_classifier(layers, drops, encoder_type, classifier_type, params)
 
     def test_loss_and_accuracy(self, loss_func, load=False):
         if load:
@@ -120,19 +120,12 @@ class ModelWrapper():
         
         return train_accs, test_accs, train_losses, test_losses
 
+
 def run_trials(trial_name, n, train_di, test_di, layers, drops, loss_func, opt_func):
-    '''
-    THINGS TO CHOOSE (num_epochs not important because I'll initially save state dicts for all and keep the best checkpoints).
-                     (then I can easily build an ensemble model - I want all this stuff to work from scripts so it's scientific)
-        - word embedding source (or BoW)
-        - encoder type
-        - classifier
-            - classifier type
-            - layers
-            - drops
-        - optimization strategy
-        - optimisation params (e.g. lr, betas)
-    '''
+    """
+    Runs n trials for a given model and stores state_dict checkpoints and statistics
+        for each training runs.
+    """
     trial_dir = args.saved_models + '/{0}/'.format(trial_name)
     if not os.path.exists(trial_dir):
         os.makedirs(trial_dir)
@@ -152,6 +145,7 @@ def run_trials(trial_name, n, train_di, test_di, layers, drops, loss_func, opt_f
             pickle.dump(test_losses, Path(run_dir+'test_losses.pkl').open('wb'))
     else:
         print('this trial name has already been used')
+
 
 def get_trial_best_models(trial_name):
     """
@@ -176,52 +170,45 @@ def get_trial_best_models(trial_name):
         print('you have already collected the best models for this trial')
 
 
-def train_model(train_di, test_di, layers, drops, loss_func, opt_func):
-    classifier = ModelWrapper(args.model_name, train_di, test_di, layers, drops, args.classification_type, args.encoder_type, args.classifier_type)
-    opt_func = opt_func(classifier.model.parameters(), lr=0.001, weight_decay=0.05)
+def train_model(train_di, test_di, layers, drops, loss_func, opt_func, params=None):
+    classifier = ModelWrapper(args.model_name, train_di, test_di, layers, drops, args.classification_type, args.encoder_type, args.classifier_type, params)
+    # opt_func = opt_func(classifier.model.parameters(), lr=0.001, weight_decay=0.05)
+    opt_func = opt_func(classifier.model.parameters())
     train_accs, test_accs, train_losses, test_losses = classifier.train(args.num_training_epochs, loss_func, opt_func)
     plot_train_test_loss(train_losses, test_losses)
     plot_train_test_accs(train_accs, test_accs)
 
 
 if __name__ == "__main__":
-    # train_di = DataIterator(DataReader(args.train_data), randomise=True) # 405
+    # train_di = DataIterator(DataReader(args.train_data), word_embedding_source=args.word_embedding_source, randomise=True) # 405
     # test_di = DataIterator(DataReader(args.test_data), word_embedding_source=args.word_embedding_source, randomise=False) # 135
+    # pickle.dump(train_di.data, Path('./data/train_data_glove_50.pkl').open('wb'))
+    # pickle.dump(test_di.data, Path('./data/test_data_glove_50.pkl').open('wb'))
+    # print(next(iter(train_di)))
+    # assert(False)
 
     train_di = PickleDataIterator('./data/train_data_fasttext_300.pkl', randomise=True)
     test_di = PickleDataIterator('./data/test_data_fasttext_300.pkl', randomise=False)
 
-    # import gensim.downloader as api
-    # we = api.load(args.word_embedding_source)
-    # doc = we['doctor']
-    # pat = we['patient']
-    # for i, r in enumerate(train_di.data):
-    #     train_di.data[i][2] = doc if r[2] == 'doctor' else pat
-    # for j, s in enumerate(test_di.data):
-    #     test_di.data[j][2] = doc if s[2] == 'doctor' else pat
-
-    # pickle.dump(train_di.data, Path('./data/train_data_fasttext_300.pkl').open('wb'))
-    # pickle.dump(test_di.data, Path('./data/test_data_fasttext_300.pkl').open('wb'))
-    # print(next(iter(test_di)))
-    # assert(False)
-
-    # print([r[5] for r in train_di.data]) # NEED PROPER EXTENDED_LABELS THING... FUUUUUCK
-    
     if args.classification_type == "simple":
         c = len(train_di.simple_labels)
     else:
         c = len(train_di.extended_labels)
     
-    layers = [900, 600, 300, 300,  c]
-    drops = [0, 0, 0, 0]
-    loss_func = nn.CrossEntropyLoss()
-    opt_func = torch.optim.SGD
+    # loss and optimisation functions
+    loss_func = nn.CrossEntropyLoss() # NB: this includes a softmax calculation => output logits from my classifiers.
+    # opt_func = torch.optim.SGD
+    opt_func = torch.optim.Adam
+
+    # For pooling classifier
+    layers = [900, 300, 50, c]
+    drops = [0, 0, 0]
+
+    # For lstm classifier
+    # layers = [150, 50, c]
+    # drops = [0, 0]
+    # params = {'embedding_dim': 50, 'hidden_dim': 50}
 
     # run_trials('pool_classifier_sgd', 10, train_di, test_di, layers, drops, loss_func, opt_func)
     # get_trial_best_models('pool_classifier_sgd')
-    train_model(train_di, test_di, layers, drops, loss_func, opt_func)
-
-    # if args.task == "train":
-    #     train_model(train_di, test_di, layers, drops, loss_func, opt_func)
-    # elif args.task == "test":
-    #     test_model(train_di, test_di)
+    train_model(train_di, test_di, layers, drops, loss_func, opt_func, params)
