@@ -2,6 +2,7 @@ import gensim.downloader as api
 import numpy as np
 import pickle
 
+from collections import defaultdict
 from pathlib import Path
 from random import shuffle
 
@@ -9,11 +10,10 @@ from preprocessing import create_vocab, tokenise
 
 
 class PickleDataIterator():
-    def __init__(self, data_file, randomise=False):
+    def __init__(self, data_file, labels, randomise=False):
         self.data_file = data_file
         self.randomise = randomise
-        self.simple_labels = pickle.load(Path('./data/simple_labels.pkl').open('rb'))
-        self.extended_labels = pickle.load(Path('./data/extended_labels.pkl').open('rb'))
+        self.simple_labels, self.extended_labels = labels
         self.fetch_data()
     
     def __len__(self):
@@ -38,11 +38,13 @@ class PickleDataIterator():
 
 
 class DataIterator():
-    def __init__(self, data_reader, word_embedding_source=None, randomise=True, bow=False):
+    def __init__(self, data_reader, word_embedding_source=None, randomise=True, bow=False, vocab=None, labels=None):
         self.data_reader = data_reader
         self.we = api.load(word_embedding_source) if word_embedding_source else None
         self.randomise = randomise
         self.bow = bow
+        self.vocab = vocab
+        self.labels = labels
         self.fetch_data()
 
     def __len__(self):
@@ -71,15 +73,21 @@ class DataIterator():
         return np.array(output)
 
     def _labels_to_idx(self):
-        self.simple_labels = []
-        self.extended_labels = []
-        for i, example in enumerate(self.data):
-            if example[4] not in self.simple_labels:
-                self.simple_labels.append(example[4])
-            self.data[i][4] = self.simple_labels.index(example[4])
-            if example[5] not in self.extended_labels:
-                self.extended_labels.append(example[5])
-            self.data[i][5] = self.extended_labels.index(example[5])
+        if not self.labels:
+            self.simple_labels = []
+            self.extended_labels = []
+            for i, example in enumerate(self.data):
+                if example[4] not in self.simple_labels:
+                    self.simple_labels.append(example[4])
+                self.data[i][4] = self.simple_labels.index(example[4])
+                if example[5] not in self.extended_labels:
+                    self.extended_labels.append(example[5])
+                self.data[i][5] = self.extended_labels.index(example[5])
+            return
+        self.simple_labels, self.extended_labels = self.labels[0], self.labels[1]
+        for j, x in enumerate(self.data):
+            self.data[j][4] = self.simple_labels.index(x[4])
+            self.data[j][5] = self.extended_labels.index(x[5])
     
     def _bow_data(self):
         assert(self.bow)
@@ -91,7 +99,10 @@ class DataIterator():
         self.data = tokenise(self.data_reader.read())
         self.num_examples = len(self.data)
         self._labels_to_idx()
-        self.vocab, self.string2idx = create_vocab([['doctor', 'patient']]+[x[3] for x in self.data])
+        if self.vocab:
+            self.string2idx = defaultdict(lambda:0, {v: k for k, v in enumerate(self.vocab)})
+        else:
+            self.vocab, self.string2idx = create_vocab([['doctor', 'patient']]+[x[3] for x in self.data])            
         if self.bow:
             self._bow_data()
         elif self.we:
