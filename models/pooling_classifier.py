@@ -25,4 +25,4 @@ class PoolingClassifier(nn.Module):
             l_x = l(x)
             x = F.relu(l_x)
         
-        return F.log_softmax(l_x, 1)
+        return l_x
