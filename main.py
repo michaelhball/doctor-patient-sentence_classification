@@ -336,8 +336,14 @@ if __name__ == "__main__":
     elif args.task == "model_accuracy":
         print(model_accuracy(5, classifier, args.num_training_epochs, loss_func, opt_func, lr))
     elif args.task == "output_csv":
+        assert(args.classification_type == "simple")
         simple_classifier = classifier
-        extended_classifier = ModelWrapper(args.model_name+'_extended', train_di, test_di, [769,50,12], [0,0],
+        if args.encoding_type == "bow":
+            layers = [769,50,12]
+        elif args.classifier_type == "pooling":
+            layers = [900, 100, c] if args.word_embedding == "fasttext_300" else [150, 500, c]
+        drops = [0,0]
+        extended_classifier = ModelWrapper(args.model_name+'_extended', train_di, test_di, layers, drops,
                 "extended", args.encoder_type, args.classifier_type, params)
         classify_to_csv(args.encoder_type, args.classifier_type, simple_classifier, extended_classifier, args.test_data, args.output_csv)
         print('successfully created CSV')
